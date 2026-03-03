@@ -51,6 +51,30 @@ export interface SessionSummary {
   session_id: string;
   total_questions: number;
   questions_answered: number;
+  questions_skipped: number; // NEW FIELD
   average_score?: number;
   answers: AnswerRecord[];
+}
+
+// NEW TYPES
+export interface SkipQuestionResponse {
+  skipped: boolean;
+  question_index: number;
+  has_more_questions: boolean;
+  next_question?: Question;
+}
+
+export interface GenerateMoreResponse {
+  new_questions: Question[];
+  total_questions: number;
+  current_question_index: number;
+}
+
+export interface NextQuestionResponse {
+  completed: boolean;
+  no_more_questions?: boolean;
+  question_index?: number;
+  question?: Question;
+  message?: string;
+  total_questions?: number;
 }

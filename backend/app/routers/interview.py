@@ -7,9 +7,11 @@ import json
 from app.db.database import get_session
 from app.models.session import InterviewSession, AnswerRecord, SessionStatus
 from app.models.background import Background
+from app.models.job_description import JobDescription  # ADD THIS
 from app.schemas.interview import (
     StartSessionRequest, SessionResponse, SessionMode,
-    AnswerSubmission, FeedbackResponse, SessionSummary, AnswerRecordResponse
+    AnswerSubmission, FeedbackResponse, SessionSummary, AnswerRecordResponse,
+    SkipQuestionResponse, GenerateMoreResponse, SessionStatusResponse  
 )
 from app.schemas.question import QuestionType
 from app.services.question_generator import QuestionGenerator
@@ -141,38 +143,6 @@ async def submit_answer(
     return feedback
 
 
-@router.post("/{session_id}/next", response_model=dict)
-async def next_question(
-    session_id: str,
-    session: AsyncSession = Depends(get_session)
-):
-    result = await session.execute(
-        select(InterviewSession).where(InterviewSession.id == session_id)
-    )
-    interview_session = result.scalar_one_or_none()
-    
-    if not interview_session:
-        raise HTTPException(status_code=404, detail="Session not found")
-    
-    questions = interview_session.questions
-    next_idx = interview_session.current_question_index + 1
-    
-    if next_idx >= len(questions):
-        interview_session.status = SessionStatus.COMPLETED.value
-        session.add(interview_session)
-        await session.commit()
-        return {"completed": True, "message": "All questions answered"}
-    
-    interview_session.current_question_index = next_idx
-    session.add(interview_session)
-    await session.commit()
-    
-    return {
-        "completed": False,
-        "question_index": next_idx,
-        "question": questions[next_idx]
-    }
-
 
 @router.post("/{session_id}/end", response_model=SessionSummary)
 async def end_session(
@@ -198,7 +168,7 @@ async def end_session(
     
     await session.commit()
     
-    # Calculate average score
+    # Calculate stats
     scores = [a.overall_score for a in answers if a.overall_score is not None]
     avg_score = sum(scores) / len(scores) if scores else None
     
@@ -218,4 +188,155 @@ async def end_session(
                 created_at=a.created_at
             ) for a in answers
         ]
+    )
+
+@router.post("/{session_id}/skip", response_model=SkipQuestionResponse)
+async def skip_question(
+    session_id: str,
+    session: AsyncSession = Depends(get_session)
+):
+    result = await session.execute(
+        select(InterviewSession).where(InterviewSession.id == session_id)
+    )
+    interview_session = result.scalar_one_or_none()
+    
+    if not interview_session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    if interview_session.status != SessionStatus.ACTIVE.value:
+        raise HTTPException(status_code=400, detail="Session is not active")
+    
+    questions = interview_session.questions
+    current_idx = interview_session.current_question_index
+    
+    if current_idx >= len(questions):
+        raise HTTPException(status_code=400, detail="No question to skip")
+    
+    # Move to next question (no DB record created)
+    next_idx = current_idx + 1
+    has_more = next_idx < len(questions)
+    
+    if has_more:
+        interview_session.current_question_index = next_idx
+        session.add(interview_session)
+        await session.commit()
+        
+        return SkipQuestionResponse(
+            skipped=True,
+            question_index=next_idx,
+            has_more_questions=True,
+            next_question=questions[next_idx]
+        )
+    else:
+        # No more questions after skip
+        await session.commit()
+        return SkipQuestionResponse(
+            skipped=True,
+            question_index=current_idx,
+            has_more_questions=False,
+            next_question=None
+        )
+
+
+@router.post("/{session_id}/next", response_model=dict)
+async def next_question(
+    session_id: str,
+    session: AsyncSession = Depends(get_session)
+):
+    result = await session.execute(
+        select(InterviewSession).where(InterviewSession.id == session_id)
+    )
+    interview_session = result.scalar_one_or_none()
+    
+    if not interview_session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    questions = interview_session.questions
+    next_idx = interview_session.current_question_index + 1
+    
+    if next_idx >= len(questions):
+        return {
+            "completed": False,
+            "no_more_questions": True,
+            "message": "No more questions. Generate more or end session.",
+            "total_questions": len(questions),
+            "question_index": interview_session.current_question_index
+        }
+    
+    interview_session.current_question_index = next_idx
+    session.add(interview_session)
+    await session.commit()
+    
+    return {
+        "completed": False,
+        "no_more_questions": False,
+        "question_index": next_idx,
+        "question": questions[next_idx]
+    }
+
+
+@router.post("/{session_id}/generate-more", response_model=GenerateMoreResponse)
+async def generate_more_questions(
+    session_id: str,
+    count: int = 5,
+    session: AsyncSession = Depends(get_session)
+):
+    result = await session.execute(
+        select(InterviewSession).where(InterviewSession.id == session_id)
+    )
+    interview_session = result.scalar_one_or_none()
+    
+    if not interview_session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    if interview_session.status != SessionStatus.ACTIVE.value:
+        raise HTTPException(status_code=400, detail="Session is not active")
+    
+    # Get background for context
+    bg_result = await session.execute(
+        select(Background).where(Background.id == interview_session.background_id)
+    )
+    background = bg_result.scalar_one_or_none()
+    
+    background_text = None
+    if background and background.resume_text:
+        background_text = background.resume_text
+    
+    # Get job description if exists
+    job_text = None
+    if interview_session.job_description_id:
+        job_result = await session.execute(
+            select(JobDescription).where(JobDescription.id == interview_session.job_description_id)
+        )
+        job = job_result.scalar_one_or_none()
+        if job:
+            job_text = job.raw_text
+    
+    # Generate new questions
+    generator = QuestionGenerator()
+    new_questions = await generator.generate_questions(
+        background_text=background_text,
+        job_description_text=job_text,
+        question_types=[QuestionType.BEHAVIORAL],
+        count=count
+    )
+    
+    # Append to existing questions
+    existing_questions = interview_session.questions
+    new_questions_dicts = [q.model_dump() for q in new_questions]
+    updated_questions = existing_questions + new_questions_dicts
+    
+    interview_session.questions_json = json.dumps(updated_questions)
+    
+    # If we were at the end, move to the first new question
+    if interview_session.current_question_index >= len(existing_questions):
+        interview_session.current_question_index = len(existing_questions)
+    
+    session.add(interview_session)
+    await session.commit()
+    
+    return GenerateMoreResponse(
+        new_questions=new_questions_dicts,
+        total_questions=len(updated_questions),
+        current_question_index=interview_session.current_question_index
     )

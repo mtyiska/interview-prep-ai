@@ -66,6 +66,29 @@ class SessionResponse(BaseModel):
 class SessionSummary(BaseModel):
     session_id: str
     total_questions: int
+    # questions_skipped: int  # NEW FIELD
     questions_answered: int
     average_score: Optional[float]
     answers: List[AnswerRecordResponse]
+
+
+# NEW SCHEMAS
+class SkipQuestionResponse(BaseModel):
+    skipped: bool
+    question_index: int
+    has_more_questions: bool
+    next_question: Optional[dict] = None
+
+
+class GenerateMoreResponse(BaseModel):
+    new_questions: List[dict]
+    total_questions: int
+    current_question_index: int
+
+
+class SessionStatusResponse(BaseModel):
+    has_more_questions: bool
+    questions_remaining: int
+    total_questions: int
+    questions_answered: int
+    questions_skipped: int

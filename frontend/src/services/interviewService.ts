@@ -4,6 +4,9 @@ import {
   StartSessionRequest,
   Feedback,
   SessionSummary,
+  SkipQuestionResponse,
+  GenerateMoreResponse,
+  NextQuestionResponse,
 } from "@/types/interview";
 
 export const interviewService = {
@@ -24,15 +27,29 @@ export const interviewService = {
     return response.data;
   },
 
-  async nextQuestion(
-    sessionId: string,
-  ): Promise<{ completed: boolean; question_index?: number; question?: any }> {
+  async nextQuestion(sessionId: string): Promise<NextQuestionResponse> {
     const response = await api.post(`/api/interview/${sessionId}/next`);
     return response.data;
   },
 
   async endSession(sessionId: string): Promise<SessionSummary> {
     const response = await api.post(`/api/interview/${sessionId}/end`);
+    return response.data;
+  },
+
+  // NEW METHODS
+  async skipQuestion(sessionId: string): Promise<SkipQuestionResponse> {
+    const response = await api.post(`/api/interview/${sessionId}/skip`);
+    return response.data;
+  },
+
+  async generateMoreQuestions(
+    sessionId: string,
+    count: number = 5,
+  ): Promise<GenerateMoreResponse> {
+    const response = await api.post(
+      `/api/interview/${sessionId}/generate-more?count=${count}`,
+    );
     return response.data;
   },
 };

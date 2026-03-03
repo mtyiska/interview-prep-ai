@@ -23,6 +23,9 @@ import {
   ArrowRight,
   RotateCcw,
   CheckCircle,
+  SkipForward,
+  Plus,
+  Flag,
 } from "lucide-react";
 
 export default function FlashcardPage() {
@@ -32,9 +35,12 @@ export default function FlashcardPage() {
 
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSkipping, setIsSkipping] = useState(false); // NEW
+  const [isGenerating, setIsGenerating] = useState(false); // NEW
   const [answer, setAnswer] = useState("");
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [isComplete, setIsComplete] = useState(false);
+  const [noMoreQuestions, setNoMoreQuestions] = useState(false); // NEW
 
   const {
     isListening,
@@ -115,8 +121,9 @@ export default function FlashcardPage() {
     try {
       const result = await interviewService.nextQuestion(currentSession.id);
 
-      if (result.completed) {
-        setIsComplete(true);
+      if (result.no_more_questions) {
+        setNoMoreQuestions(true);
+        setFeedback(null);
       } else {
         const updatedSession = await interviewService.getSession(
           currentSession.id,
@@ -124,6 +131,7 @@ export default function FlashcardPage() {
         setCurrentSession(updatedSession);
         setAnswer("");
         setFeedback(null);
+        setNoMoreQuestions(false);
 
         if (voiceOutputSupported && result.question) {
           speak(result.question.text);
@@ -131,6 +139,79 @@ export default function FlashcardPage() {
       }
     } catch (error) {
       toast.error("Failed to get next question");
+    }
+  };
+
+  // NEW: Skip handler
+  const handleSkip = async () => {
+    if (!currentSession) return;
+
+    setIsSkipping(true);
+    try {
+      const result = await interviewService.skipQuestion(currentSession.id);
+
+      if (result.has_more_questions && result.next_question) {
+        const updatedSession = await interviewService.getSession(
+          currentSession.id,
+        );
+        setCurrentSession(updatedSession);
+        setAnswer("");
+        setFeedback(null);
+
+        if (voiceOutputSupported) {
+          speak(result.next_question.text);
+        }
+        toast.success("Question skipped");
+      } else {
+        setNoMoreQuestions(true);
+        toast.success("Question skipped - no more questions");
+      }
+    } catch (error) {
+      toast.error("Failed to skip question");
+    } finally {
+      setIsSkipping(false);
+    }
+  };
+
+  // NEW: Generate more handler
+  const handleGenerateMore = async () => {
+    if (!currentSession) return;
+
+    setIsGenerating(true);
+    try {
+      const result = await interviewService.generateMoreQuestions(
+        currentSession.id,
+        5,
+      );
+      const updatedSession = await interviewService.getSession(
+        currentSession.id,
+      );
+      setCurrentSession(updatedSession);
+      setNoMoreQuestions(false);
+      setAnswer("");
+      setFeedback(null);
+
+      toast.success(`Generated ${result.new_questions.length} more questions!`);
+
+      if (voiceOutputSupported && result.new_questions.length > 0) {
+        speak(result.new_questions[0].text);
+      }
+    } catch (error) {
+      toast.error("Failed to generate more questions");
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  // NEW: End session handler
+  const handleEndSession = async () => {
+    if (!currentSession) return;
+
+    try {
+      await interviewService.endSession(currentSession.id);
+      setIsComplete(true);
+    } catch (error) {
+      toast.error("Failed to end session");
     }
   };
 
@@ -150,14 +231,17 @@ export default function FlashcardPage() {
   }
 
   if (isComplete) {
+    const totalQuestions = currentSession?.questions.length || 0;
+
     return (
       <div className="max-w-2xl mx-auto space-y-6">
         <Card className="text-center">
           <CardContent className="pt-12 pb-8">
             <CheckCircle className="h-16 w-16 text-green-500 mx-auto mb-4" />
             <h2 className="text-2xl font-bold mb-2">Practice Complete!</h2>
-            <p className="text-gray-600 mb-6">
-              Great job completing this practice session.
+            <p className="text-muted-foreground mb-6">
+              Great job completing this practice session with {totalQuestions}{" "}
+              questions.
             </p>
             <div className="flex justify-center gap-4">
               <Button onClick={handleRestart}>
@@ -173,7 +257,6 @@ export default function FlashcardPage() {
       </div>
     );
   }
-
   if (!currentSession) return null;
 
   const currentQuestion =
@@ -200,7 +283,7 @@ export default function FlashcardPage() {
 
       <QuestionCard question={currentQuestion} />
 
-      {!feedback ? (
+      {!feedback && !noMoreQuestions ? (
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">Your Answer</CardTitle>
@@ -215,18 +298,33 @@ export default function FlashcardPage() {
             />
 
             <div className="flex items-center justify-between">
-              {voiceInputSupported && (
-                <VoiceButton
-                  isListening={isListening}
-                  onStart={startListening}
-                  onStop={stopListening}
-                />
-              )}
+              <div className="flex items-center gap-2">
+                {voiceInputSupported && (
+                  <VoiceButton
+                    isListening={isListening}
+                    onStart={startListening}
+                    onStop={stopListening}
+                  />
+                )}
+
+                {/* NEW: Skip Button */}
+                <Button
+                  variant="ghost"
+                  onClick={handleSkip}
+                  disabled={isSkipping || isSubmitting}
+                >
+                  {isSkipping ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <SkipForward className="h-4 w-4 mr-2" />
+                  )}
+                  Skip
+                </Button>
+              </div>
 
               <Button
                 onClick={handleSubmit}
                 disabled={!answer.trim() || isSubmitting}
-                className="ml-auto"
               >
                 {isSubmitting ? (
                   <>
@@ -243,18 +341,61 @@ export default function FlashcardPage() {
             </div>
           </CardContent>
         </Card>
-      ) : (
+      ) : noMoreQuestions ? (
+        /* NEW: No more questions state */
+        <Card>
+          <CardContent className="py-8 text-center space-y-4">
+            <CheckCircle className="h-12 w-12 text-green-500 mx-auto" />
+            <div>
+              <h3 className="text-lg font-semibold">
+                All Questions Completed!
+              </h3>
+              <p className="text-muted-foreground">
+                You've answered all {currentSession?.questions.length}{" "}
+                questions.
+              </p>
+            </div>
+            <div className="flex justify-center gap-4">
+              <Button
+                onClick={handleGenerateMore}
+                disabled={isGenerating}
+                variant="outline"
+              >
+                {isGenerating ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Generate 5 More Questions
+                  </>
+                )}
+              </Button>
+              <Button onClick={handleEndSession}>
+                <Flag className="h-4 w-4 mr-2" />
+                End Session
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      ) : feedback ? (
         <>
           <FeedbackPanel feedback={feedback} answer={answer} />
 
-          <div className="flex justify-end">
+          <div className="flex justify-between">
+            <Button variant="outline" onClick={handleEndSession}>
+              <Flag className="h-4 w-4 mr-2" />
+              End Session
+            </Button>
             <Button onClick={handleNext}>
               Next Question
               <ArrowRight className="h-4 w-4 ml-2" />
             </Button>
           </div>
         </>
-      )}
+      ) : null}
     </div>
   );
 }

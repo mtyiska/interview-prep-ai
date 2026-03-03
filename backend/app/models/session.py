@@ -43,6 +43,7 @@ class AnswerRecord(SQLModel, table=True):
     answer_text: str
     overall_score: Optional[int] = None
     feedback_json: Optional[str] = None
+    # skipped: bool = False  # NEW FIELD
     created_at: datetime = Field(default_factory=datetime.utcnow)
     
     @property
