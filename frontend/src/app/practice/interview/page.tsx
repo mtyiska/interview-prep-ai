@@ -317,6 +317,11 @@ export default function MockInterviewPage() {
             >
               <Mic className="h-6 w-6" />
             </Button>
+            <div className="mt-4">
+              <Button variant="ghost" size="sm" onClick={handleNext}>
+                Skip
+              </Button>
+            </div>
           </CardContent>
         </Card>
       )}

@@ -215,13 +215,18 @@ export default function FlashcardPage() {
             />
 
             <div className="flex items-center justify-between">
-              {voiceInputSupported && (
-                <VoiceButton
-                  isListening={isListening}
-                  onStart={startListening}
-                  onStop={stopListening}
-                />
-              )}
+              <div className="flex items-center gap-2">
+                {voiceInputSupported && (
+                  <VoiceButton
+                    isListening={isListening}
+                    onStart={startListening}
+                    onStop={stopListening}
+                  />
+                )}
+                <Button variant="ghost" size="sm" onClick={handleNext}>
+                  Skip
+                </Button>
+              </div>
 
               <Button
                 onClick={handleSubmit}
