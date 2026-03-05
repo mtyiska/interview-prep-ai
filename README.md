@@ -6,6 +6,10 @@ An AI-powered interview preparation tool that helps you practice behavioral inte
 ![Python](https://img.shields.io/badge/python-3.11-green.svg)
 ![Next.js](https://img.shields.io/badge/next.js-14-black.svg)
 
+## Demo
+
+[![Watch the demo](https://img.youtube.com/vi/WtHovefyIVU/maxresdefault.jpg)](https://www.youtube.com/shorts/WtHovefyIVU)
+
 ## ✨ Features
 
 - **🤖 AI-Powered Resume Parsing** — Paste your resume and automatically extract skills, experiences, and generate STAR stories
